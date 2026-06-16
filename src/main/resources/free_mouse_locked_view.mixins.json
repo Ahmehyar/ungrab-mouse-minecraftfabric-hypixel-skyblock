@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.marsbelt.freemouse.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MinecraftClientMixin",
+    "MouseMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

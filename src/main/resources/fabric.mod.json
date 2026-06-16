@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "free_mouse_locked_view",
+  "version": "${version}",
+  "name": "Free Mouse Lock",
+  "description": "Client-side mouse-lock toggle that releases the cursor, freezes camera yaw/pitch, and preserves vanilla-safe keyboard control only while the game window is focused.",
+  "authors": [
+    "MarsBelt / ChatGPT"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.marsbelt.freemouse.FreeMouseClient"
+    ]
+  },
+  "mixins": [
+    "free_mouse_locked_view.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.5",
+    "minecraft": "1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
