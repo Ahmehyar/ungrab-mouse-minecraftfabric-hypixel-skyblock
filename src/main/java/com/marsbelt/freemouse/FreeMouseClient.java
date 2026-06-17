@@ -3,21 +3,35 @@ package com.marsbelt.freemouse;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
 
 public final class FreeMouseClient implements ClientModInitializer {
     public static final String MOD_ID = "free_mouse_locked_view";
+
+    private static final int TELEPORT_SYNC_GRACE_TICKS = 5;
+    private static final double SUDDEN_POSITION_CHANGE_SQUARED = 4.0D;
+    private static final float LOOK_CHANGE_EPSILON = 1.0F;
 
     private static KeyBinding toggleKey;
     private static boolean active = false;
     private static float lockedYaw;
     private static float lockedPitch;
     private static boolean releasedUnsafeInputLastTick = false;
+    private static boolean lastGameplayInputAllowed = false;
+    private static int lockSyncGraceTicks = 0;
+    private static Object lastWorld = null;
+    private static Object lastPlayer = null;
+    private static boolean hasLastPosition = false;
+    private static double lastX;
+    private static double lastY;
+    private static double lastZ;
 
     @Override
     public void onInitializeClient() {
@@ -29,6 +43,7 @@ public final class FreeMouseClient implements ClientModInitializer {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(FreeMouseClient::onEndClientTick);
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> disable(client, false));
     }
 
     public static boolean isActive() {
@@ -44,8 +59,6 @@ public final class FreeMouseClient implements ClientModInitializer {
             return;
         }
 
-        keepCursorFree(client);
-
         if (!focused) {
             // Focus loss can leave vanilla key bindings in a pressed state until a
             // matching release event arrives. Clear gameplay actions immediately so
@@ -53,7 +66,16 @@ public final class FreeMouseClient implements ClientModInitializer {
             // sneaking, or sprinting while Minecraft is in the background.
             releaseGameplayInput(client);
             releasedUnsafeInputLastTick = true;
+            releaseCursorOnly(client);
+            return;
         }
+
+        if (client.currentScreen == null && client.player != null && client.world != null
+                && !client.mouse.isCursorLocked()) {
+            client.mouse.lockCursor();
+        }
+
+        releaseCursorOnly(client);
     }
 
     private static void onEndClientTick(MinecraftClient client) {
@@ -62,34 +84,36 @@ public final class FreeMouseClient implements ClientModInitializer {
         }
 
         if (!active) {
-            releasedUnsafeInputLastTick = false;
+            resetRuntimeState();
             return;
         }
 
         if (client.player == null || client.world == null) {
-            active = false;
-            releasedUnsafeInputLastTick = false;
+            disable(client, false);
             return;
         }
 
-        keepCursorFree(client);
+        boolean gameplayInputAllowed = isGameplayInputAllowed(client);
+        updateLockForServerCorrections(client);
+        updateCursorState(client, gameplayInputAllowed);
 
-        boolean gameplayInputAllowed = client.currentScreen == null && client.isWindowFocused();
-
-        if (!gameplayInputAllowed) {
-            // Screens and unfocused windows should not inherit held movement/action
-            // keys from live gameplay. Clearing these bindings lets vanilla GUI
-            // behavior happen normally and guarantees the mod does not keep the
-            // player moving, attacking, or using items in the background.
+        if (client.isWindowFocused()) {
+            releasedUnsafeInputLastTick = false;
+        } else {
+            // Only clear gameplay keys while unfocused. Focused GUIs should keep
+            // vanilla mouse behavior, including button presses used by screens.
             releaseGameplayInput(client);
             releasedUnsafeInputLastTick = true;
-        } else if (releasedUnsafeInputLastTick) {
-            // New physical key events drive movement from here; the mod does not
-            // synthesize pressed states when returning to the live game screen.
-            releasedUnsafeInputLastTick = false;
         }
 
-        lockView(client);
+        if (lockSyncGraceTicks > 0) {
+            syncLockedViewToPlayer(client);
+            lockSyncGraceTicks--;
+        } else {
+            lockView(client);
+        }
+
+        recordLastPlayerState(client);
     }
 
     private static void toggle(MinecraftClient client) {
@@ -109,8 +133,15 @@ public final class FreeMouseClient implements ClientModInitializer {
         lockedYaw = client.player.getYaw();
         lockedPitch = client.player.getPitch();
         active = true;
+        releasedUnsafeInputLastTick = false;
+        lockSyncGraceTicks = 0;
+        recordLastPlayerState(client);
 
-        client.mouse.unlockCursor();
+        if (isGameplayInputAllowed(client) && !client.mouse.isCursorLocked()) {
+            client.mouse.lockCursor();
+        }
+
+        releaseCursorOnly(client);
         lockView(client);
         toast(client, "Free Mouse Lock: ON");
     }
@@ -121,7 +152,7 @@ public final class FreeMouseClient implements ClientModInitializer {
         }
 
         active = false;
-        releasedUnsafeInputLastTick = false;
+        resetRuntimeState();
 
         if (client.player != null && client.world != null && client.currentScreen == null && client.isWindowFocused()) {
             client.mouse.lockCursor();
@@ -130,6 +161,40 @@ public final class FreeMouseClient implements ClientModInitializer {
         if (announce) {
             toast(client, "Free Mouse Lock: OFF");
         }
+    }
+
+    private static boolean isGameplayInputAllowed(MinecraftClient client) {
+        return active
+                && client != null
+                && client.player != null
+                && client.world != null
+                && client.currentScreen == null
+                && client.isWindowFocused();
+    }
+
+    private static void updateCursorState(MinecraftClient client, boolean gameplayInputAllowed) {
+        if (gameplayInputAllowed) {
+            if (!client.mouse.isCursorLocked()) {
+                client.mouse.lockCursor();
+            }
+
+            if (!lastGameplayInputAllowed) {
+                releaseCursorOnly(client);
+            }
+        } else if (lastGameplayInputAllowed) {
+            releaseCursorOnly(client);
+        }
+
+        lastGameplayInputAllowed = gameplayInputAllowed;
+    }
+
+    private static void releaseCursorOnly(MinecraftClient client) {
+        InputUtil.setCursorParameters(
+                client.getWindow(),
+                GLFW.GLFW_CURSOR_NORMAL,
+                client.mouse.getX(),
+                client.mouse.getY()
+        );
     }
 
     private static void lockView(MinecraftClient client) {
@@ -141,6 +206,45 @@ public final class FreeMouseClient implements ClientModInitializer {
         client.player.setPitch(lockedPitch);
         client.player.headYaw = lockedYaw;
         client.player.bodyYaw = lockedYaw;
+    }
+
+    private static void updateLockForServerCorrections(MinecraftClient client) {
+        boolean changedPlayerContext = client.world != lastWorld || client.player != lastPlayer;
+        boolean suddenPositionChange = false;
+
+        if (hasLastPosition && !changedPlayerContext) {
+            double deltaX = client.player.getX() - lastX;
+            double deltaY = client.player.getY() - lastY;
+            double deltaZ = client.player.getZ() - lastZ;
+            suddenPositionChange = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
+                    > SUDDEN_POSITION_CHANGE_SQUARED;
+        }
+
+        boolean serverLookChange =
+                Math.abs(MathHelper.wrapDegrees(client.player.getYaw() - lockedYaw)) > LOOK_CHANGE_EPSILON
+                        || Math.abs(client.player.getPitch() - lockedPitch) > LOOK_CHANGE_EPSILON;
+
+        if (changedPlayerContext || suddenPositionChange || serverLookChange) {
+            lockSyncGraceTicks = TELEPORT_SYNC_GRACE_TICKS;
+        }
+
+        if (lockSyncGraceTicks > 0) {
+            syncLockedViewToPlayer(client);
+        }
+    }
+
+    private static void syncLockedViewToPlayer(MinecraftClient client) {
+        lockedYaw = client.player.getYaw();
+        lockedPitch = client.player.getPitch();
+    }
+
+    private static void recordLastPlayerState(MinecraftClient client) {
+        lastWorld = client.world;
+        lastPlayer = client.player;
+        hasLastPosition = true;
+        lastX = client.player.getX();
+        lastY = client.player.getY();
+        lastZ = client.player.getZ();
     }
 
     private static void releaseGameplayInput(MinecraftClient client) {
@@ -163,6 +267,7 @@ public final class FreeMouseClient implements ClientModInitializer {
         options.sprintKey.setPressed(false);
         options.attackKey.setPressed(false);
         options.useKey.setPressed(false);
+        options.pickItemKey.setPressed(false);
     }
 
     private static void toast(MinecraftClient client, String message) {
@@ -171,12 +276,12 @@ public final class FreeMouseClient implements ClientModInitializer {
         }
     }
 
-    private static void keepCursorFree(MinecraftClient client) {
-        // Active means "keep the mouse free". It should survive GUIs and focus loss.
-        // The mixin also blocks vanilla lockCursor() while active, but this corrects
-        // the state if another code path already grabbed the cursor.
-        if (client.mouse.isCursorLocked()) {
-            client.mouse.unlockCursor();
-        }
+    private static void resetRuntimeState() {
+        releasedUnsafeInputLastTick = false;
+        lastGameplayInputAllowed = false;
+        lockSyncGraceTicks = 0;
+        lastWorld = null;
+        lastPlayer = null;
+        hasLastPosition = false;
     }
 }
