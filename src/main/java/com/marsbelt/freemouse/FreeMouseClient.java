@@ -35,6 +35,8 @@ public final class FreeMouseClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        FreeMouseConfig.load();
+
         toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key." + MOD_ID + ".toggle",
                 InputUtil.Type.MOUSE,
@@ -42,6 +44,7 @@ public final class FreeMouseClient implements ClientModInitializer {
                 KeyBinding.Category.MISC
         ));
 
+        InventoryViewerOverlay.register();
         ClientTickEvents.END_CLIENT_TICK.register(FreeMouseClient::onEndClientTick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> disable(client, false));
     }

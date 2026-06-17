@@ -1,3 +1,7 @@
 {
-  "key.free_mouse_locked_view.toggle": "Toggle Free Mouse Lock"
+  "key.free_mouse_locked_view.toggle": "Toggle Free Mouse Lock",
+  "key.free_mouse_locked_view.inventory_viewer": "Toggle Inventory Viewer",
+  "key.free_mouse_locked_view.inventory_viewer_position": "Edit Inventory Viewer Position",
+  "screen.free_mouse_locked_view.inventory_viewer_position": "Inventory Viewer Position",
+  "screen.free_mouse_locked_view.inventory_viewer_position.help": "Drag the panel or use arrow keys. Hold Shift for 10 px. Done saves."
 }

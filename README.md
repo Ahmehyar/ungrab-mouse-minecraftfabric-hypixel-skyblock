@@ -6,12 +6,16 @@ Fabric 1.21.11 client-side mod.
 
 Toggle **Free Mouse Lock** from Minecraft's normal keybind menu.
 
-Default bind: **Mouse Button 4**.
+Default Free Mouse Lock bind: **Mouse Button 4**.
+
+Optional inventory viewer default bind: **I**.
+
+Optional inventory viewer position editor: **unbound by default**.
 
 You can rebind it in:
 
 ```text
-Options > Controls > Key Binds > Miscellaneous > Toggle Free Mouse Lock
+Options > Controls > Key Binds > Miscellaneous
 ```
 
 It can be bound to normal keyboard keys or mouse buttons like:
@@ -30,11 +34,29 @@ When active:
 - if Minecraft loses focus, the mode stays on but movement/use/attack inputs are released
 - when you refocus Minecraft, the cursor is still free and the locked-view state resumes
 
+The optional inventory viewer is a read-only HUD overlay. It shows your own
+hotbar, main inventory, armor, and offhand using Minecraft's normal item
+rendering. It does not open a menu, capture the mouse, move items, click slots,
+drop items, send packets, or automate gameplay.
+
+The inventory viewer position is saved in:
+
+```text
+config/free_mouse_locked_view.json
+```
+
+Bind **Edit Inventory Viewer Position** in Controls to move the HUD in game.
+The editor is a non-pausing screen where you can drag the panel, nudge it with
+arrow keys, hold Shift for larger nudges, reset to the default top-right
+position, and close with Done or Escape.
+
 ## Controls
 
-- Default: Mouse Button 4
-- Rebindable in Minecraft's Controls menu
-- Supports mouse buttons such as middle click, Mouse Button 4, Mouse Button 5, and keyboard keys
+- Free Mouse Lock default: Mouse Button 4
+- Inventory Viewer default: I
+- Inventory Viewer Position Editor default: unbound
+- Both are rebindable in Minecraft's Controls menu
+- Free Mouse Lock supports mouse buttons such as middle click, Mouse Button 4, Mouse Button 5, and keyboard keys
 
 ## Hypixel/SkyBlock safety design
 
@@ -46,10 +68,13 @@ This mod intentionally does **not**:
 - keep moving while Minecraft is unfocused
 - keep using/attacking while Minecraft is unfocused
 - send custom packets
+- send inventory/action packets
 - change movement physics
 - reveal hidden info or change perspective
+- move, rearrange, drop, use, or edit inventory items
 
-It only releases the local cursor and prevents mouse-look while active.
+It only releases the local cursor, prevents mouse-look while active, and can
+render a read-only HUD view of inventory data the client already has.
 
 ## Use at your own risk on Hypixel
 
