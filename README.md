@@ -4,7 +4,7 @@ Fabric 1.21.11 client-side mod.
 
 ## Usage
 
-Toggle **Free Mouse Lock** from Minecraft's normal keybind menu in miscellanous.
+Toggle **Free Mouse Lock** from Minecraft's normal keybind menu in miscellaneous.
 
 Default Free Mouse Lock bind: **Mouse Button 4**.
 
